@@ -1,0 +1,853 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>NEURALVISION — Real-Time Edge Computer Vision</title>
+  <meta name="description" content="Real-time computer vision pipeline: edge inference, multi-class classification, and live telemetry dashboard."/>
+
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet"/>
+
+  <!-- Three.js -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+  <!-- GSAP -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/ScrollTrigger.min.js"></script>
+
+  <!-- Chart.js for telemetry graphs -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+
+  <link rel="stylesheet" href="src/style.css"/>
+</head>
+<body>
+
+<!-- ═══════════════════════════════════════════════════
+     THREE.JS BACKGROUND CANVAS
+══════════════════════════════════════════════════════ -->
+<canvas id="bg-canvas"></canvas>
+
+<!-- ═══════════════════════════════════════════════════
+     SCANLINE OVERLAY
+══════════════════════════════════════════════════════ -->
+<div class="scanlines" aria-hidden="true"></div>
+
+<!-- ═══════════════════════════════════════════════════
+     HEADER / NAV
+══════════════════════════════════════════════════════ -->
+<header class="header" role="banner">
+  <div class="header-left">
+    <span class="logo">NEURAL<span class="logo-accent">VISION</span></span>
+    <span class="build-label">// CORE&nbsp;&nbsp;BUILD 0.1&nbsp;&nbsp;EDGE INFERENCE ENGINE</span>
+  </div>
+  <nav class="header-nav" aria-label="Main navigation">
+    <a href="#telemetry" class="nav-link">TELEMETRY</a>
+    <a href="#architecture" class="nav-link">ARCHITECTURE</a>
+    <a href="#model" class="nav-link">MODEL</a>
+    <a href="#roadmap" class="nav-link">ROADMAP</a>
+  </nav>
+  <div class="header-right">
+    <div class="status-indicator" id="conn-indicator" aria-live="polite">
+      <span class="status-dot" id="status-dot"></span>
+      <span class="status-text" id="status-text">CONNECTING</span>
+    </div>
+  </div>
+</header>
+
+<!-- ═══════════════════════════════════════════════════
+     §01 HERO
+══════════════════════════════════════════════════════ -->
+<section class="section hero-section" id="hero" aria-label="Hero">
+  <div class="hero-content">
+    <div class="hero-eyebrow">REAL-TIME EDGE COMPUTER VISION</div>
+    <h1 class="hero-title">
+      NEURAL<span class="hero-accent">VISION</span>
+    </h1>
+    <p class="hero-sub">Multi-class inference · Live telemetry · Observable pipeline</p>
+
+    <!-- Telemetry strip -->
+    <div class="telemetry-strip" role="region" aria-label="Live telemetry strip">
+      <div class="strip-item">
+        <div class="strip-label">FPS</div>
+        <div class="strip-value" id="hero-fps">--</div>
+      </div>
+      <div class="strip-sep" aria-hidden="true"></div>
+      <div class="strip-item">
+        <div class="strip-label">LATENCY</div>
+        <div class="strip-value" id="hero-latency">-- ms</div>
+      </div>
+      <div class="strip-sep" aria-hidden="true"></div>
+      <div class="strip-item">
+        <div class="strip-label">CONFIDENCE</div>
+        <div class="strip-value" id="hero-confidence">-- %</div>
+      </div>
+      <div class="strip-sep" aria-hidden="true"></div>
+      <div class="strip-item">
+        <div class="strip-label">MODEL</div>
+        <div class="strip-value" id="hero-model">LOADING</div>
+      </div>
+    </div>
+
+    <div class="demo-badge" id="demo-badge" aria-label="Connection mode indicator">
+      <span class="demo-dot"></span>
+      <span id="demo-label">SIMULATION MODE</span>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════
+     §02 TELEMETRY DASHBOARD
+══════════════════════════════════════════════════════ -->
+<section class="section telemetry-section" id="telemetry" aria-label="Telemetry Dashboard">
+  <div class="section-header">
+    <div class="section-tag">02</div>
+    <h2 class="section-title">LIVE TELEMETRY</h2>
+    <div class="section-line" aria-hidden="true"></div>
+  </div>
+
+  <div class="telemetry-grid">
+
+    <!-- Camera / Video Input panel -->
+    <div class="panel camera-panel" role="region" aria-label="Camera viewport">
+      <div class="panel-header">
+        <span class="panel-title">VIDEO INPUT &amp; LIVE INFERENCE</span>
+        <div class="cam-controls">
+          <!-- Source selector -->
+          <button class="src-btn active" id="src-demo" title="Synthetic demo frames">DEMO</button>
+          <button class="src-btn" id="src-upload" title="Upload a video file">📁 UPLOAD VIDEO</button>
+          <button class="src-btn" id="src-webcam" title="Use your webcam">📷 WEBCAM</button>
+          <span class="panel-badge" id="cam-badge">FRAME_BUFFER</span>
+        </div>
+      </div>
+
+      <!-- Hidden file input -->
+      <input type="file" id="video-file-input" accept="video/*" style="display:none" aria-label="Upload video file"/>
+
+      <!-- Upload drop zone (shown when no video loaded) -->
+      <div class="upload-zone" id="upload-zone">
+        <div class="uz-icon">🎬</div>
+        <div class="uz-title">DROP VIDEO HERE</div>
+        <div class="uz-sub">or click UPLOAD VIDEO above</div>
+        <div class="uz-formats">MP4 · WEBM · MOV · AVI · MKV</div>
+      </div>
+
+      <!-- The actual video element (hidden, used as source) -->
+      <video id="input-video" style="display:none" loop muted playsinline crossorigin="anonymous"></video>
+
+      <div class="camera-viewport" id="camera-viewport" aria-label="Camera view with HUD overlay">
+        <canvas id="camera-canvas" width="640" height="360"></canvas>
+        <!-- HUD overlays -->
+        <div class="hud hud-tl">
+          <div class="hud-line">NEURALVISION // LIVE</div>
+          <div class="hud-line" id="hud-frame">FRAME 000000</div>
+        </div>
+        <div class="hud hud-tr">
+          <div class="hud-line" id="hud-fps-cam">FPS --</div>
+          <div class="hud-line" id="hud-latency-cam">LATENCY -- ms</div>
+        </div>
+        <div class="hud hud-bl">
+          <div class="detection-box" id="detection-box" aria-live="polite">
+            <span class="det-class" id="det-class">DETECTING</span>
+            <span class="det-conf" id="det-conf">-- %</span>
+          </div>
+        </div>
+        <div class="hud hud-br">
+          <div class="hud-line" id="hud-device">CPU</div>
+          <div class="hud-line" id="hud-src-label">DEMO</div>
+        </div>
+        <div class="scan-line" id="scan-line" aria-hidden="true"></div>
+        <div class="corner-tl" aria-hidden="true"></div>
+        <div class="corner-tr" aria-hidden="true"></div>
+        <div class="corner-bl" aria-hidden="true"></div>
+        <div class="corner-br" aria-hidden="true"></div>
+      </div>
+
+      <!-- Video playback controls (shown when video is loaded) -->
+      <div class="vid-controls" id="vid-controls" style="display:none">
+        <button class="vc-btn" id="vc-play" aria-label="Play/Pause">⏸ PAUSE</button>
+        <button class="vc-btn" id="vc-restart" aria-label="Restart">↺ RESTART</button>
+        <div class="vc-filename" id="vc-filename"></div>
+        <button class="vc-btn vc-close" id="vc-close" aria-label="Close video">✕ CLOSE</button>
+      </div>
+    </div>
+
+    <!-- Key metrics -->
+    <div class="panel metrics-panel" role="region" aria-label="Key inference metrics">
+      <div class="panel-header">
+        <span class="panel-title">INFERENCE METRICS</span>
+        <span class="panel-badge">INFERENCE_WORKER</span>
+      </div>
+      <div class="metrics-grid">
+        <div class="metric-card" id="mc-fps">
+          <div class="metric-label">FPS</div>
+          <div class="metric-value" id="m-fps">--</div>
+          <div class="metric-bar"><div class="metric-fill" id="mf-fps"></div></div>
+        </div>
+        <div class="metric-card" id="mc-latency">
+          <div class="metric-label">LATENCY</div>
+          <div class="metric-value" id="m-latency">-- <span class="metric-unit">ms</span></div>
+          <div class="metric-bar"><div class="metric-fill" id="mf-latency"></div></div>
+        </div>
+        <div class="metric-card" id="mc-confidence">
+          <div class="metric-label">CONFIDENCE</div>
+          <div class="metric-value" id="m-confidence">-- <span class="metric-unit">%</span></div>
+          <div class="metric-bar"><div class="metric-fill" id="mf-confidence"></div></div>
+        </div>
+        <div class="metric-card" id="mc-class">
+          <div class="metric-label">CLASS</div>
+          <div class="metric-value metric-class" id="m-class">--</div>
+        </div>
+      </div>
+
+      <!-- Latency breakdown -->
+      <div class="latency-breakdown" role="region" aria-label="Latency breakdown">
+        <div class="lb-title">LATENCY BREAKDOWN</div>
+        <div class="lb-row">
+          <span class="lb-key">CAPTURE</span>
+          <div class="lb-bar-wrap"><div class="lb-bar" id="lb-capture"></div></div>
+          <span class="lb-val" id="lbv-capture">--</span>
+        </div>
+        <div class="lb-row">
+          <span class="lb-key">PREPROCESS</span>
+          <div class="lb-bar-wrap"><div class="lb-bar" id="lb-pre"></div></div>
+          <span class="lb-val" id="lbv-pre">--</span>
+        </div>
+        <div class="lb-row">
+          <span class="lb-key">INFERENCE</span>
+          <div class="lb-bar-wrap"><div class="lb-bar" id="lb-inf"></div></div>
+          <span class="lb-val" id="lbv-inf">--</span>
+        </div>
+        <div class="lb-row">
+          <span class="lb-key">POSTPROCESS</span>
+          <div class="lb-bar-wrap"><div class="lb-bar" id="lb-post"></div></div>
+          <span class="lb-val" id="lbv-post">--</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- FPS chart -->
+    <div class="panel chart-panel" role="region" aria-label="FPS chart">
+      <div class="panel-header">
+        <span class="panel-title">FPS HISTORY</span>
+        <span class="panel-badge">TELEMETRY_STREAM</span>
+      </div>
+      <canvas id="fps-chart" aria-label="FPS over time chart"></canvas>
+    </div>
+
+    <!-- Latency chart -->
+    <div class="panel chart-panel" role="region" aria-label="Latency chart">
+      <div class="panel-header">
+        <span class="panel-title">INFERENCE LATENCY</span>
+        <span class="panel-badge">MODEL_RUNTIME</span>
+      </div>
+      <canvas id="latency-chart" aria-label="Inference latency over time chart"></canvas>
+    </div>
+
+    <!-- Class distribution -->
+    <div class="panel dist-panel" role="region" aria-label="Class distribution">
+      <div class="panel-header">
+        <span class="panel-title">CLASS DISTRIBUTION</span>
+        <button class="reset-btn" id="reset-dist" aria-label="Reset class distribution data">RESET</button>
+      </div>
+      <div id="class-dist-list" aria-live="polite"></div>
+    </div>
+
+    <!-- Frame buffer monitor -->
+    <div class="panel buffer-panel" role="region" aria-label="Frame buffer monitor">
+      <div class="panel-header">
+        <span class="panel-title">FRAME BUFFER</span>
+        <span class="panel-badge">FRAME_BUFFER</span>
+      </div>
+      <div class="buffer-grid">
+        <div class="buf-item">
+          <div class="buf-label">QUEUE</div>
+          <div class="buf-bar-wrap"><div class="buf-fill" id="buf-fill"></div></div>
+        </div>
+        <div class="buf-item">
+          <div class="buf-label">BUFFER SIZE</div>
+          <div class="buf-val" id="buf-size">--</div>
+        </div>
+        <div class="buf-item">
+          <div class="buf-label">DROPPED</div>
+          <div class="buf-val buf-danger" id="buf-dropped">00</div>
+        </div>
+        <div class="buf-item">
+          <div class="buf-label">PROCESSED</div>
+          <div class="buf-val" id="buf-processed">0</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Confidence threshold -->
+    <div class="panel threshold-panel" role="region" aria-label="Confidence threshold control">
+      <div class="panel-header">
+        <span class="panel-title">CONFIDENCE THRESHOLD</span>
+        <span class="panel-badge" id="thresh-mode-badge">DEMO MODE</span>
+      </div>
+      <div class="threshold-ctrl">
+        <input type="range" id="conf-threshold" min="0" max="1" step="0.01" value="0.5"
+               aria-label="Confidence threshold slider" class="thresh-slider"/>
+        <div class="thresh-labels">
+          <span>0.00</span>
+          <span class="thresh-current" id="thresh-val">0.50</span>
+          <span>1.00</span>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /telemetry-grid -->
+</section>
+
+<!-- ═══════════════════════════════════════════════════
+     §03 PIPELINE VISUALIZATION
+══════════════════════════════════════════════════════ -->
+<section class="section pipeline-section" id="pipeline" aria-label="Inference Pipeline">
+  <div class="section-header">
+    <div class="section-tag">03</div>
+    <h2 class="section-title">INFERENCE PIPELINE</h2>
+    <div class="section-line" aria-hidden="true"></div>
+  </div>
+  <div class="pipeline-container" role="img" aria-label="Animated inference pipeline diagram">
+    <div class="pipe-node active" id="pn-camera" data-label="CAMERA" data-desc="VideoCapture · OpenCV">
+      <div class="pn-icon">📷</div>
+      <div class="pn-name">CAMERA</div>
+      <div class="pn-tech">OpenCV VideoCapture</div>
+    </div>
+    <div class="pipe-arrow" aria-hidden="true"><div class="pipe-packet" id="pp-1"></div></div>
+    <div class="pipe-node" id="pn-capture" data-label="CAPTURE" data-desc="Frame acquisition + validation">
+      <div class="pn-icon">🎞</div>
+      <div class="pn-name">FRAME CAPTURE</div>
+      <div class="pn-tech">CaptureWorker</div>
+    </div>
+    <div class="pipe-arrow" aria-hidden="true"><div class="pipe-packet" id="pp-2"></div></div>
+    <div class="pipe-node" id="pn-pre" data-label="PREPROCESS" data-desc="Resize · Normalize · RGB convert">
+      <div class="pn-icon">⚡</div>
+      <div class="pn-name">PREPROCESS</div>
+      <div class="pn-tech">OpenCV · NumPy</div>
+    </div>
+    <div class="pipe-arrow" aria-hidden="true"><div class="pipe-packet" id="pp-3"></div></div>
+    <div class="pipe-node" id="pn-tensor" data-label="TENSOR" data-desc="Float32 tensor (1,H,W,3)">
+      <div class="pn-icon">🧮</div>
+      <div class="pn-name">TENSOR</div>
+      <div class="pn-tech">(1, 224, 224, 3)</div>
+    </div>
+    <div class="pipe-arrow" aria-hidden="true"><div class="pipe-packet" id="pp-4"></div></div>
+    <div class="pipe-node" id="pn-nn" data-label="NEURAL NET" data-desc="Configurable vision model">
+      <div class="pn-icon">🧠</div>
+      <div class="pn-name">NEURAL NETWORK</div>
+      <div class="pn-tech">VisionModel</div>
+    </div>
+    <div class="pipe-arrow" aria-hidden="true"><div class="pipe-packet" id="pp-5"></div></div>
+    <div class="pipe-node" id="pn-inf" data-label="INFERENCE" data-desc="Raw logits → softmax probabilities">
+      <div class="pn-icon">⚙️</div>
+      <div class="pn-name">INFERENCE</div>
+      <div class="pn-tech">InferenceWorker</div>
+    </div>
+    <div class="pipe-arrow" aria-hidden="true"><div class="pipe-packet" id="pp-6"></div></div>
+    <div class="pipe-node" id="pn-class" data-label="CLASSIFY" data-desc="argmax · confidence · class name">
+      <div class="pn-icon">🏷</div>
+      <div class="pn-name">CLASSIFICATION</div>
+      <div class="pn-tech">Postprocessing</div>
+    </div>
+    <div class="pipe-arrow" aria-hidden="true"><div class="pipe-packet" id="pp-7"></div></div>
+    <div class="pipe-node" id="pn-telem" data-label="TELEMETRY" data-desc="FastAPI · WebSocket · Dashboard">
+      <div class="pn-icon">📡</div>
+      <div class="pn-name">TELEMETRY</div>
+      <div class="pn-tech">WebSocket</div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════
+     §04 NEURAL NETWORK VISUALIZATION
+══════════════════════════════════════════════════════ -->
+<section class="section nn-section" id="nn-viz" aria-label="Neural Network Visualization">
+  <div class="section-header">
+    <div class="section-tag">04</div>
+    <h2 class="section-title">NEURAL INFERENCE VISUALIZATION</h2>
+    <div class="section-line" aria-hidden="true"></div>
+  </div>
+  <p class="section-note">Conceptual topology — not an exact representation of the model graph</p>
+  <canvas id="nn-canvas" aria-label="Interactive neural network visualization"></canvas>
+  <div class="nn-labels" aria-hidden="true">
+    <span>INPUT LAYER</span>
+    <span>FEATURE EXTRACTION</span>
+    <span>HIDDEN LAYERS</span>
+    <span>CLASSIFICATION</span>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════
+     §05 ARCHITECTURE
+══════════════════════════════════════════════════════ -->
+<section class="section arch-section" id="architecture" aria-label="System Architecture">
+  <div class="section-header">
+    <div class="section-tag">05</div>
+    <h2 class="section-title">SYSTEM ARCHITECTURE</h2>
+    <div class="section-line" aria-hidden="true"></div>
+  </div>
+
+  <div class="arch-grid">
+    <div class="arch-node" tabindex="0" role="button" aria-label="Edge Device component"
+         data-purpose="Physical or virtual compute host"
+         data-inputs="Power, Camera signal"
+         data-outputs="Processed frames"
+         data-tech="Linux / Windows / Raspberry Pi"
+         data-status="IMPLEMENTED">
+      <div class="arch-node-inner">
+        <div class="arch-icon">🖥</div>
+        <div class="arch-name">EDGE DEVICE</div>
+        <div class="arch-status" data-s="IMPLEMENTED">IMPLEMENTED</div>
+      </div>
+    </div>
+    <div class="arch-connector" aria-hidden="true"></div>
+    <div class="arch-node" tabindex="0" role="button" aria-label="Camera component"
+         data-purpose="Frame source — USB camera, file, or synthetic"
+         data-inputs="Hardware interface"
+         data-outputs="Raw BGR frames"
+         data-tech="OpenCV VideoCapture"
+         data-status="IMPLEMENTED">
+      <div class="arch-node-inner">
+        <div class="arch-icon">📷</div>
+        <div class="arch-name">CAMERA</div>
+        <div class="arch-status" data-s="IMPLEMENTED">IMPLEMENTED</div>
+      </div>
+    </div>
+    <div class="arch-connector" aria-hidden="true"></div>
+    <div class="arch-node" tabindex="0" role="button" aria-label="OpenCV component"
+         data-purpose="Image capture, frame validation, and pipeline entry"
+         data-inputs="Camera device / video file"
+         data-outputs="Validated raw frames"
+         data-tech="OpenCV 4.x"
+         data-status="IMPLEMENTED">
+      <div class="arch-node-inner">
+        <div class="arch-icon">👁</div>
+        <div class="arch-name">OPENCV</div>
+        <div class="arch-status" data-s="IMPLEMENTED">IMPLEMENTED</div>
+      </div>
+    </div>
+    <div class="arch-connector" aria-hidden="true"></div>
+    <div class="arch-node" tabindex="0" role="button" aria-label="Preprocessing component"
+         data-purpose="Resize, normalize, color conversion before model input"
+         data-inputs="Raw BGR frame"
+         data-outputs="Float32 tensor (1,224,224,3)"
+         data-tech="NumPy · OpenCV"
+         data-status="IMPLEMENTED">
+      <div class="arch-node-inner">
+        <div class="arch-icon">⚡</div>
+        <div class="arch-name">PREPROCESS</div>
+        <div class="arch-status" data-s="IMPLEMENTED">IMPLEMENTED</div>
+      </div>
+    </div>
+    <div class="arch-connector" aria-hidden="true"></div>
+    <div class="arch-node" tabindex="0" role="button" aria-label="Neural Network component"
+         data-purpose="Feature extraction and classification"
+         data-inputs="Normalised tensor"
+         data-outputs="Class logits / probabilities"
+         data-tech="VisionModel (swappable)"
+         data-status="IN PROGRESS">
+      <div class="arch-node-inner">
+        <div class="arch-icon">🧠</div>
+        <div class="arch-name">NEURAL NETWORK</div>
+        <div class="arch-status" data-s="IN PROGRESS">IN PROGRESS</div>
+      </div>
+    </div>
+    <div class="arch-connector" aria-hidden="true"></div>
+    <div class="arch-node" tabindex="0" role="button" aria-label="Inference Engine component"
+         data-purpose="Threaded async pipeline — capture, inference, telemetry decoupled"
+         data-inputs="Frame buffer"
+         data-outputs="TelemetryPacket"
+         data-tech="Python threading"
+         data-status="IMPLEMENTED">
+      <div class="arch-node-inner">
+        <div class="arch-icon">⚙️</div>
+        <div class="arch-name">INFERENCE ENGINE</div>
+        <div class="arch-status" data-s="IMPLEMENTED">IMPLEMENTED</div>
+      </div>
+    </div>
+    <div class="arch-connector" aria-hidden="true"></div>
+    <div class="arch-node" tabindex="0" role="button" aria-label="FastAPI backend component"
+         data-purpose="REST API and WebSocket server"
+         data-inputs="TelemetryPacket from engine"
+         data-outputs="JSON REST + WebSocket stream"
+         data-tech="FastAPI · Uvicorn · Pydantic"
+         data-status="IMPLEMENTED">
+      <div class="arch-node-inner">
+        <div class="arch-icon">🚀</div>
+        <div class="arch-name">FASTAPI</div>
+        <div class="arch-status" data-s="IMPLEMENTED">IMPLEMENTED</div>
+      </div>
+    </div>
+    <div class="arch-connector" aria-hidden="true"></div>
+    <div class="arch-node" tabindex="0" role="button" aria-label="WebSocket component"
+         data-purpose="Real-time telemetry push at ~30fps to all connected clients"
+         data-inputs="TelemetryPacket"
+         data-outputs="JSON to browser"
+         data-tech="FastAPI WebSocket"
+         data-status="IMPLEMENTED">
+      <div class="arch-node-inner">
+        <div class="arch-icon">📡</div>
+        <div class="arch-name">WEBSOCKET</div>
+        <div class="arch-status" data-s="IMPLEMENTED">IMPLEMENTED</div>
+      </div>
+    </div>
+    <div class="arch-connector" aria-hidden="true"></div>
+    <div class="arch-node" tabindex="0" role="button" aria-label="Dashboard component"
+         data-purpose="Futuristic telemetry dashboard with WebGL and live charts"
+         data-inputs="WebSocket JSON stream"
+         data-outputs="Human-readable telemetry"
+         data-tech="HTML · Three.js · Chart.js · GSAP"
+         data-status="IMPLEMENTED">
+      <div class="arch-node-inner">
+        <div class="arch-icon">📊</div>
+        <div class="arch-name">TELEMETRY UI</div>
+        <div class="arch-status" data-s="IMPLEMENTED">IMPLEMENTED</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Arch tooltip -->
+  <div class="arch-tooltip" id="arch-tooltip" role="tooltip" aria-hidden="true">
+    <div class="at-title" id="at-title"></div>
+    <div class="at-row"><span class="at-key">PURPOSE</span><span id="at-purpose"></span></div>
+    <div class="at-row"><span class="at-key">INPUTS</span><span id="at-inputs"></span></div>
+    <div class="at-row"><span class="at-key">OUTPUTS</span><span id="at-outputs"></span></div>
+    <div class="at-row"><span class="at-key">TECHNOLOGY</span><span id="at-tech"></span></div>
+    <div class="at-row"><span class="at-key">STATUS</span><span id="at-status"></span></div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════
+     §06 THE BOTTLENECK
+══════════════════════════════════════════════════════ -->
+<section class="section bottleneck-section" id="bottleneck" aria-label="Engineering Problem">
+  <div class="section-header">
+    <div class="section-tag">06</div>
+    <h2 class="section-title">THE BOTTLENECK</h2>
+    <div class="section-line" aria-hidden="true"></div>
+  </div>
+  <p class="bottleneck-lead">
+    Conventional deep-learning pipelines accumulate latency at every stage.
+    On constrained hardware the compounding effect becomes a hard engineering problem.
+  </p>
+  <div class="bottleneck-flow" aria-label="Bottleneck cascade diagram">
+    <div class="bf-item bf-bad">HEAVIER MODEL</div>
+    <div class="bf-arrow">↓</div>
+    <div class="bf-item bf-bad">HIGHER COMPUTE</div>
+    <div class="bf-arrow">↓</div>
+    <div class="bf-item bf-bad">HIGHER LATENCY</div>
+    <div class="bf-arrow">↓</div>
+    <div class="bf-item bf-bad">FRAME DROPS</div>
+    <div class="bf-arrow">↓</div>
+    <div class="bf-item bf-worst">POOR REAL-TIME EXPERIENCE</div>
+  </div>
+
+  <div class="approach-section" id="approach" aria-label="NEURALVISION engineering approach">
+    <h3 class="approach-title">THE APPROACH</h3>
+    <div class="approach-items">
+      <div class="ap-item">
+        <div class="ap-icon">✦</div>
+        <div class="ap-text">LIGHTWEIGHT MODEL</div>
+      </div>
+      <div class="ap-plus">+</div>
+      <div class="ap-item">
+        <div class="ap-icon">✦</div>
+        <div class="ap-text">OPTIMISED PREPROCESSING</div>
+      </div>
+      <div class="ap-plus">+</div>
+      <div class="ap-item">
+        <div class="ap-icon">✦</div>
+        <div class="ap-text">ASYNC INFERENCE</div>
+      </div>
+      <div class="ap-plus">+</div>
+      <div class="ap-item">
+        <div class="ap-icon">✦</div>
+        <div class="ap-text">LIVE TELEMETRY</div>
+      </div>
+      <div class="ap-eq">=</div>
+      <div class="ap-result">REAL-TIME VISION SYSTEM</div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════
+     §07 MODEL PANEL
+══════════════════════════════════════════════════════ -->
+<section class="section model-section" id="model" aria-label="Model Status">
+  <div class="section-header">
+    <div class="section-tag">07</div>
+    <h2 class="section-title">MODEL STATUS</h2>
+    <div class="section-line" aria-hidden="true"></div>
+  </div>
+  <div class="model-grid">
+    <div class="model-card">
+      <div class="mc-row"><span class="mc-key">MODEL</span><span class="mc-val" id="md-name">LOADING</span></div>
+      <div class="mc-row"><span class="mc-key">VERSION</span><span class="mc-val" id="md-version">--</span></div>
+      <div class="mc-row"><span class="mc-key">DEVICE</span><span class="mc-val" id="md-device">--</span></div>
+      <div class="mc-row"><span class="mc-key">INPUT</span><span class="mc-val" id="md-input">224×224</span></div>
+      <div class="mc-row"><span class="mc-key">CLASSES</span><span class="mc-val" id="md-classes">--</span></div>
+      <div class="mc-row"><span class="mc-key">PRECISION</span><span class="mc-val" id="md-precision">FP32</span></div>
+      <div class="mc-row"><span class="mc-key">PARAMETERS</span><span class="mc-val">TBD</span></div>
+      <div class="mc-row"><span class="mc-key">STATUS</span>
+        <span class="mc-val mc-status" id="md-status">NOT CONFIGURED</span>
+      </div>
+    </div>
+
+    <div class="eval-card" aria-label="Model evaluation results">
+      <div class="eval-title">MODEL EVALUATION</div>
+      <div class="eval-pending">
+        <div class="eval-icon">⧖</div>
+        <div>EVALUATION DATA PENDING</div>
+        <div class="eval-sub">Run evaluation pipeline to populate</div>
+      </div>
+      <div class="eval-grid">
+        <div class="ev-item"><div class="ev-label">ACCURACY</div><div class="ev-val">TBD</div></div>
+        <div class="ev-item"><div class="ev-label">PRECISION</div><div class="ev-val">TBD</div></div>
+        <div class="ev-item"><div class="ev-label">RECALL</div><div class="ev-val">TBD</div></div>
+        <div class="ev-item"><div class="ev-label">F1</div><div class="ev-val">TBD</div></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════
+     §08 EDGE OPTIMIZATIONS
+══════════════════════════════════════════════════════ -->
+<section class="section optim-section" id="optimizations" aria-label="Edge Optimizations">
+  <div class="section-header">
+    <div class="section-tag">08</div>
+    <h2 class="section-title">EDGE OPTIMIZATIONS</h2>
+    <div class="section-line" aria-hidden="true"></div>
+  </div>
+  <div class="optim-grid">
+    <div class="optim-item" data-status="implemented">
+      <div class="oi-status">IMPLEMENTED</div>
+      <div class="oi-name">ASYNC INFERENCE</div>
+      <div class="oi-desc">Capture, inference, and telemetry run on separate threads — UI never blocks the model.</div>
+    </div>
+    <div class="optim-item" data-status="implemented">
+      <div class="oi-status">IMPLEMENTED</div>
+      <div class="oi-name">FRAME BUFFER</div>
+      <div class="oi-desc">Bounded queue with back-pressure: drops oldest frames when inference lags capture.</div>
+    </div>
+    <div class="optim-item" data-status="implemented">
+      <div class="oi-status">IMPLEMENTED</div>
+      <div class="oi-name">FRAME SKIPPING</div>
+      <div class="oi-desc">Configurable frame-skip ratio to reduce inference load on constrained hardware.</div>
+    </div>
+    <div class="optim-item" data-status="implemented">
+      <div class="oi-status">IMPLEMENTED</div>
+      <div class="oi-name">IMAGE DOWNSAMPLING</div>
+      <div class="oi-desc">Frames resized to 224×224 before inference — reduces tensor memory and compute.</div>
+    </div>
+    <div class="optim-item" data-status="planned">
+      <div class="oi-status">PLANNED</div>
+      <div class="oi-name">MODEL QUANTIZATION</div>
+      <div class="oi-desc">INT8 / FP16 quantization via ONNX Runtime or TensorFlow Lite.</div>
+    </div>
+    <div class="optim-item" data-status="planned">
+      <div class="oi-status">PLANNED</div>
+      <div class="oi-name">ONNX EXPORT</div>
+      <div class="oi-desc">Export trained models to ONNX for hardware-agnostic inference acceleration.</div>
+    </div>
+    <div class="optim-item" data-status="planned">
+      <div class="oi-status">PLANNED</div>
+      <div class="oi-name">GPU ACCELERATION</div>
+      <div class="oi-desc">CUDA / OpenCL backend for supported devices.</div>
+    </div>
+    <div class="optim-item" data-status="planned">
+      <div class="oi-status">PLANNED</div>
+      <div class="oi-name">INFERENCE BATCHING</div>
+      <div class="oi-desc">Process multiple frames per forward pass where latency budget allows.</div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════
+     §09 PROJECT STATUS
+══════════════════════════════════════════════════════ -->
+<section class="section status-section" id="project-status" aria-label="Project Development Status">
+  <div class="section-header">
+    <div class="section-tag">09</div>
+    <h2 class="section-title">PROJECT STATUS</h2>
+    <div class="section-line" aria-hidden="true"></div>
+  </div>
+  <div class="status-grid">
+    <div class="status-bar-item">
+      <div class="sbi-header">
+        <span class="sbi-name">CORE PIPELINE</span>
+        <span class="sbi-pct">80%</span>
+      </div>
+      <div class="sbi-track"><div class="sbi-fill" data-pct="80"></div></div>
+    </div>
+    <div class="status-bar-item">
+      <div class="sbi-header">
+        <span class="sbi-name">MODEL INTEGRATION</span>
+        <span class="sbi-pct">30%</span>
+      </div>
+      <div class="sbi-track"><div class="sbi-fill" data-pct="30"></div></div>
+    </div>
+    <div class="status-bar-item">
+      <div class="sbi-header">
+        <span class="sbi-name">EDGE OPTIMIZATION</span>
+        <span class="sbi-pct">40%</span>
+      </div>
+      <div class="sbi-track"><div class="sbi-fill" data-pct="40"></div></div>
+    </div>
+    <div class="status-bar-item">
+      <div class="sbi-header">
+        <span class="sbi-name">TELEMETRY</span>
+        <span class="sbi-pct">85%</span>
+      </div>
+      <div class="sbi-track"><div class="sbi-fill" data-pct="85"></div></div>
+    </div>
+    <div class="status-bar-item">
+      <div class="sbi-header">
+        <span class="sbi-name">WEB DASHBOARD</span>
+        <span class="sbi-pct">90%</span>
+      </div>
+      <div class="sbi-track"><div class="sbi-fill" data-pct="90"></div></div>
+    </div>
+    <div class="status-bar-item">
+      <div class="sbi-header">
+        <span class="sbi-name">BENCHMARKING</span>
+        <span class="sbi-pct">50%</span>
+      </div>
+      <div class="sbi-track"><div class="sbi-fill" data-pct="50"></div></div>
+    </div>
+  </div>
+  <div class="dev-status-tag">STATUS: ACTIVE DEVELOPMENT</div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════
+     §10 ROADMAP
+══════════════════════════════════════════════════════ -->
+<section class="section roadmap-section" id="roadmap" aria-label="Project Roadmap">
+  <div class="section-header">
+    <div class="section-tag">10</div>
+    <h2 class="section-title">ROADMAP</h2>
+    <div class="section-line" aria-hidden="true"></div>
+  </div>
+  <div class="roadmap-list">
+    <div class="rm-item rm-inprogress" tabindex="0">
+      <div class="rm-num">01</div>
+      <div class="rm-body">
+        <div class="rm-name">LIGHTWEIGHT CNN</div>
+        <div class="rm-desc">Custom lightweight convolutional architecture for edge inference</div>
+      </div>
+      <div class="rm-status">IN PROGRESS</div>
+    </div>
+    <div class="rm-item rm-planned" tabindex="0">
+      <div class="rm-num">02</div>
+      <div class="rm-body">
+        <div class="rm-name">MODEL QUANTIZATION</div>
+        <div class="rm-desc">INT8 / FP16 quantization for 2-4× speed improvement</div>
+      </div>
+      <div class="rm-status">PLANNED</div>
+    </div>
+    <div class="rm-item rm-planned" tabindex="0">
+      <div class="rm-num">03</div>
+      <div class="rm-body">
+        <div class="rm-name">ONNX / TFLITE EXPORT</div>
+        <div class="rm-desc">Hardware-agnostic inference via ONNX Runtime</div>
+      </div>
+      <div class="rm-status">PLANNED</div>
+    </div>
+    <div class="rm-item rm-planned" tabindex="0">
+      <div class="rm-num">04</div>
+      <div class="rm-body">
+        <div class="rm-name">GPU ACCELERATION</div>
+        <div class="rm-desc">CUDA / OpenCL backend for supported devices</div>
+      </div>
+      <div class="rm-status">PLANNED</div>
+    </div>
+    <div class="rm-item rm-planned" tabindex="0">
+      <div class="rm-num">05</div>
+      <div class="rm-body">
+        <div class="rm-name">EDGE DEVICE DEPLOYMENT</div>
+        <div class="rm-desc">Raspberry Pi / Jetson Nano / Coral TPU target</div>
+      </div>
+      <div class="rm-status">PLANNED</div>
+    </div>
+    <div class="rm-item rm-planned" tabindex="0">
+      <div class="rm-num">06</div>
+      <div class="rm-body">
+        <div class="rm-name">MULTI-CAMERA INFERENCE</div>
+        <div class="rm-desc">Concurrent inference across multiple video streams</div>
+      </div>
+      <div class="rm-status">PLANNED</div>
+    </div>
+    <div class="rm-item rm-planned" tabindex="0">
+      <div class="rm-num">07</div>
+      <div class="rm-body">
+        <div class="rm-name">OBJECT DETECTION</div>
+        <div class="rm-desc">Bounding box prediction with YOLO-style head</div>
+      </div>
+      <div class="rm-status">PLANNED</div>
+    </div>
+    <div class="rm-item rm-planned" tabindex="0">
+      <div class="rm-num">08</div>
+      <div class="rm-body">
+        <div class="rm-name">ANOMALY DETECTION</div>
+        <div class="rm-desc">Autoencoder-based anomaly scoring for defect detection</div>
+      </div>
+      <div class="rm-status">PLANNED</div>
+    </div>
+    <div class="rm-item rm-planned" tabindex="0">
+      <div class="rm-num">09</div>
+      <div class="rm-body">
+        <div class="rm-name">REMOTE TELEMETRY</div>
+        <div class="rm-desc">Cloud telemetry relay + remote monitoring dashboard</div>
+      </div>
+      <div class="rm-status">PLANNED</div>
+    </div>
+    <div class="rm-item rm-planned" tabindex="0">
+      <div class="rm-num">10</div>
+      <div class="rm-body">
+        <div class="rm-name">EDGE ↔ CLOUD HYBRID</div>
+        <div class="rm-desc">Split inference: lightweight on-device + heavy cloud offload</div>
+      </div>
+      <div class="rm-status">PLANNED</div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════
+     §11 EVENT CONSOLE
+══════════════════════════════════════════════════════ -->
+<section class="section console-section" id="console" aria-label="System Event Console">
+  <div class="section-header">
+    <div class="section-tag">11</div>
+    <h2 class="section-title">EVENT CONSOLE</h2>
+    <div class="section-line" aria-hidden="true"></div>
+  </div>
+  <div class="console-wrap" role="log" aria-live="polite" aria-label="System event log">
+    <div class="console-header">
+      <span class="con-title">NEURALVISION // SYSTEM LOG</span>
+      <button class="con-clear" id="con-clear" aria-label="Clear console">CLEAR</button>
+    </div>
+    <div class="console-body" id="console-body"></div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════
+     FOOTER
+══════════════════════════════════════════════════════ -->
+<footer class="footer" role="contentinfo">
+  <div class="footer-left">
+    <span class="footer-logo">NEURALVISION</span>
+    <span class="footer-sub">Real-Time Edge Computer Vision · Build 0.1</span>
+  </div>
+  <div class="footer-right">
+    <span class="footer-label">INFERENCE_WORKER</span>
+    <span class="footer-label">MODEL_RUNTIME</span>
+    <span class="footer-label">TELEMETRY_STREAM</span>
+    <span class="footer-label">WEBSOCKET</span>
+  </div>
+</footer>
+
+<script src="src/app.js"></script>
+</body>
+</html>
